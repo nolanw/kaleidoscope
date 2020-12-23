@@ -1,0 +1,9 @@
+# elm-package
+/elm-stuff/
+
+# elm-repl
+repl-temp-*
+
+# kaleidoscope
+/kaleidoscope.js
+/index.html
