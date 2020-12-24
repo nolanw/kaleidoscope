@@ -24,17 +24,23 @@ Error: EACCES: permission denied, mkdir '/opt/local/lib/node_modules/elm-format/
 
 which went away after adding `--unsafe-perm=true` to the `npm` invocation.
 
+For automatic recompliation on browser refresh whenever relevant files change, install [tychus](https://github.com/devlocker/tychus) and then:
+
+1. Spin up a web server: `python3 -m http.server 8000`
+2. Have Tychus start its proxy and watching: `tychus "make" --wait --app-port=8000`
+3. `open http://localhost:4000`
+
 ### Roadmap
 
-* Draw a hex grid resembling the Take It Easy board.
-* Draw tiles with numbers and lines.
-* Click a tile to select it.
-* Click a hex to place the selected tile.
-* Save current board state encoded in the URL, so it can be linked to others.
-* Select a tile by typing its numbers.
-* Place the selected tile by typing a numbered unoccupied hex.
-* Click/tap tiles/hexes to select/place.
-* Undo/redo.
+- [x] Draw a hex grid resembling the Take It Easy board.
+- [ ] Draw tiles with numbers and lines.
+- [ ] Click a tile to select it.
+- [ ] Click a hex to place the selected tile.
+- [ ] Save current board state encoded in the URL, so it can be linked to others.
+- [ ] Select a tile by typing its numbers.
+- [ ] Place the selected tile by typing a numbered unoccupied hex.
+- [ ] Click/tap tiles/hexes to select/place.
+- [ ] Undo/redo.
 
 ## References
 
