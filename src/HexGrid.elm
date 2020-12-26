@@ -3,7 +3,8 @@ module HexGrid exposing (
   hexToScreenCorners,
   Layout,
   mapShapeHex,
-  Point)
+  Point,
+  supplyGrid)
 
 type alias Point = { x: Float, y: Float }
 
@@ -108,3 +109,27 @@ mapShapeHex radius =
     hex q r = { q = q, r = r }
   in
     List.concat (List.map (\q -> List.map (\r -> hex q r) (rs q)) qs)
+
+supplyGrid : List Hex
+supplyGrid =
+  (moveAll (moveHorizontal -1) (mapShapeVerticalLine 9)) ++
+  (mapShapeVerticalLine 9) ++
+  (moveAll (moveHorizontal 1) (mapShapeVerticalLine 9))
+
+mapShapeVerticalLine : Int -> List Hex
+mapShapeVerticalLine height =
+  let
+    fromZero = List.range 0 (height - 1)
+    offset = (height - 1) // 2
+  in
+    List.map (\r -> { q = 0, r = r - offset }) fromZero
+
+moveHorizontal : Int -> Hex -> Hex
+moveHorizontal offset {q, r} =
+  { q = q + (2 * offset)
+  , r = r - offset
+  }
+
+moveAll : (Hex -> Hex) -> List Hex -> List Hex
+moveAll moveOne hexes =
+  List.map moveOne hexes
