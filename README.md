@@ -36,10 +36,11 @@ For automatic recompliation on browser refresh whenever relevant files change, i
 - [x] Draw tiles with numbers and lines.
 - [x] Click a tile to select it.
 - [x] Click a hex to place the selected tile.
-- [ ] Save current board state encoded in the URL, so it can be linked to others.
+- [x] Save board state to local storage so it survives a reload.
+- [ ] Improve aesthetics.
+- [ ] Save board state in the URL so it can be linked to others.
 - [ ] Select a tile by typing its numbers.
 - [ ] Place the selected tile by typing a numbered unoccupied hex.
-- [ ] Click/tap tiles/hexes to select/place.
 - [ ] Undo/redo.
 
 ## References

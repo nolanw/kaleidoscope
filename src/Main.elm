@@ -1,28 +1,27 @@
 port module Main exposing (..)
 
 import Browser
+import Dict
 import HexGrid exposing (..)
 import Html exposing (Html, button, div)
 import Html.Attributes
 import Html.Events exposing (onClick)
+import Json.Decode as D
+import Json.Encode as E
 import Svg exposing (..)
 import Svg.Attributes exposing (..)
 import Svg.Events exposing (onClick)
 
 -- Main
 
-main : Program () Model Msg
+main : Program E.Value Model Msg
 main =
   Browser.element
     { init = init
     , view = view
-    , update = update
+    , update = updateWithStorage
     , subscriptions = \_ -> Sub.none
     }
-
--- Ports
-
-port alert : String -> Cmd msg
 
 -- Model
 
@@ -38,15 +37,58 @@ type Selection
   | Board Tile
   | NoSelection
 
-init : () -> ( Model, Cmd Msg )
+init : E.Value -> ( Model, Cmd Msg )
 init flags =
-  ( { layout = { size = 30 }
-    , board = (List.map (\h -> { hex = h, tile = Nothing }) (mapShapeHex 2))
-    , supply = List.map2 (\h tile -> { hex = h, tile = Now tile }) supplyGrid supplyTiles
-    , selection = NoSelection
-    }
-  , Cmd.none
-  )
+  let
+    layout = { size = 30 }
+    selection = NoSelection
+  in
+    (
+      case D.decodeValue decoder flags of
+        Ok boardTiles ->
+          { layout = layout
+          , selection = selection
+          , board = makeBoard boardTiles
+          , supply = makeSupply (List.filterMap .tile boardTiles)
+          }
+          
+        Err msg ->
+          { layout = layout
+          , selection = selection
+          , board = makeBoard []
+          , supply = makeSupply []
+          }
+    ,
+      Cmd.none
+    )
+
+makeBoard : List BoardHex -> List BoardHex
+makeBoard boardTiles =
+  let
+    toTuple bt = Maybe.map
+      (\t -> ((bt.hex.q, bt.hex.r), t))
+      bt.tile
+    lookup = boardTiles
+      |> List.filterMap toTuple
+      |> Dict.fromList
+  in
+    mapShapeHex 2
+      |> List.map (\h ->
+        { hex = h
+        , tile = Dict.get (h.q, h.r) lookup
+        })
+
+makeSupply : List Tile -> List SupplyHex
+makeSupply boardTiles =
+  let
+    tileState tile =
+      if List.any (\t -> t == tile) boardTiles then
+        Was tile
+      else
+        Now tile
+    combine hex tile = { hex = hex, tile = tileState tile }
+  in
+    List.map2 combine supplyGrid supplyTiles
 
 supplyTiles : List Tile
 supplyTiles =
@@ -73,6 +115,7 @@ type Msg
   | SelectOnBoard Tile
   | RemoveFromBoard
   | Deselect
+  | ClearBoard
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -99,6 +142,20 @@ update msg model =
     
     Deselect ->
       ( { model | selection = NoSelection }
+      , Cmd.none
+      )
+    
+    ClearBoard ->
+      let
+        erase bh = { bh | tile = Nothing }
+        replace sh = case sh.tile of
+          Now _ -> sh
+          Was t -> { sh | tile = Now t }
+      in
+      ( { model
+        | board = List.map erase model.board
+        , supply = List.map replace model.supply
+        }
       , Cmd.none
       )
       
@@ -197,6 +254,9 @@ view {layout, board, supply, selection} =
           [ Svg.text ".hover-grey:hover { fill: #ccc }" ]
         ] ++ (List.map (boardPolygon layout selection) board)
       )
+    , button
+      [ Html.Events.onClick ClearBoard ]
+      [ Html.text "Clear Board" ]
     , svg
       (let
         w = findWidth layout (List.map .hex supply)
@@ -432,3 +492,113 @@ type SupplyTile
 svgPoints : List Point -> String
 svgPoints points =
   String.join " " (List.map (\p -> String.fromFloat(p.x) ++ "," ++ String.fromFloat(p.y)) points)
+
+
+-- Ports
+
+port setStorage : E.Value -> Cmd msg
+
+updateWithStorage : Msg -> Model -> ( Model, Cmd Msg )
+updateWithStorage msg oldModel =
+  let
+    ( newModel, cmds ) = update msg oldModel
+  in
+    ( newModel
+    , Cmd.batch [ setStorage (encode newModel), cmds ]
+    )
+
+
+-- JSON encode/decode
+
+encode : Model -> E.Value
+encode model =
+  E.object
+    [ ("board", E.list (\m -> m) (List.filterMap encodeBoardHex model.board) ) ]
+
+encodeBoardHex : BoardHex -> Maybe E.Value
+encodeBoardHex bh =
+  case bh.tile of
+    Nothing -> Nothing
+    Just t -> Just (E.object
+      [ ("hex", encodeHex bh.hex)
+      , ("tile", encodeTile t)
+      ])
+
+encodeHex : Hex -> E.Value
+encodeHex {q, r} =
+  [q, r]
+    |> List.map String.fromInt
+    |> String.join ","
+    |> E.string
+
+encodeTile : Tile -> E.Value
+encodeTile tile =
+  [ tileLeft, tileMiddle, tileRight ]
+    |> List.map (\f -> f tile)
+    |> List.map String.fromInt
+    |> String.join ""
+    |> E.string
+
+decoder : D.Decoder (List BoardHex)
+decoder =
+  D.field "board" (D.list decodeBoardHex)
+
+decodeBoardHex : D.Decoder BoardHex
+decodeBoardHex =
+  D.map2 BoardHex
+    (D.field "hex" D.string
+      |> D.andThen decodeHexString)
+    (D.field "tile" D.string
+      |> D.andThen decodeTileString)
+
+decodeHexString : String -> D.Decoder Hex
+decodeHexString hex =
+  let
+    components = String.split "," hex
+    ints = List.map String.toInt components
+  in case ints of
+    [Just q, Just r] -> D.succeed { q = q, r = r }
+    _ -> D.fail <|
+      "Trying to decode hex coordinate, but "
+      ++ hex ++ " is unrecognizable."
+
+decodeTileString : String -> D.Decoder (Maybe Tile)
+decodeTileString tile =
+  case String.toList tile of
+    [l, m, r] ->
+      case (tileLeftFromChar l, tileMiddleFromChar m, tileRightFromChar r) of
+        (Just left, Just middle, Just right) ->
+          D.succeed (Just ( left, middle, right ))
+        
+        _ ->
+          D.fail <|
+            "Trying to decode tile, but "
+            ++ tile ++ " is unrecognizable."
+    _ ->
+      D.fail <|
+        "Trying to decode tile, but "
+        ++ tile ++ " is not recognized."
+
+tileLeftFromChar : Char -> Maybe TileLeft
+tileLeftFromChar c =
+  case c of
+    '2' -> Just Two
+    '6' -> Just Six
+    '7' -> Just Seven
+    _ -> Nothing
+
+tileMiddleFromChar : Char -> Maybe TileMiddle
+tileMiddleFromChar c =
+  case c of
+    '1' -> Just One
+    '5' -> Just Five
+    '9' -> Just Nine
+    _ -> Nothing
+
+tileRightFromChar : Char -> Maybe TileRight
+tileRightFromChar c =
+  case c of
+    '3' -> Just Three
+    '4' -> Just Four
+    '8' -> Just Eight
+    _ -> Nothing
