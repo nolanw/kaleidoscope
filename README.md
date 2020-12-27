@@ -33,9 +33,9 @@ For automatic recompliation on browser refresh whenever relevant files change, i
 ### Roadmap
 
 - [x] Draw a hex grid resembling the Take It Easy board.
-- [ ] Draw tiles with numbers and lines.
-- [ ] Click a tile to select it.
-- [ ] Click a hex to place the selected tile.
+- [x] Draw tiles with numbers and lines.
+- [x] Click a tile to select it.
+- [x] Click a hex to place the selected tile.
 - [ ] Save current board state encoded in the URL, so it can be linked to others.
 - [ ] Select a tile by typing its numbers.
 - [ ] Place the selected tile by typing a numbered unoccupied hex.

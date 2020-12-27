@@ -30,13 +30,19 @@ type alias Model =
   { layout: Layout
   , board: List TiledHex
   , supply: List TiledHex
+  , selection: Selection
   }
+
+type Selection
+  = Supply Tile
+  | NoSelection
 
 init : () -> ( Model, Cmd Msg )
 init flags =
   ( { layout = { size = 30 }
     , board = (List.map (\h -> { hex = h, tile = Nothing }) (mapShapeHex 2))
     , supply = List.map2 (\h tile -> { hex = h, tile = Just tile }) supplyGrid supplyTiles
+    , selection = NoSelection
     }
   , Cmd.none
   )
@@ -60,22 +66,70 @@ supplyTiles =
 
 -- Update
 
-type Msg = Alert Hex
+type Msg
+  = SelectFromSupply Tile
+  | PlaceOnBoard Hex
+
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
   case msg of
-    Alert hex ->
-      ( model
-      , alert
-        ( "clicked hex " ++ (String.fromInt hex.q)
-        ++ "," ++ (String.fromInt hex.r)
-        )
+    SelectFromSupply tile ->
+      ( updateSupplySelection model tile
+      , Cmd.none
       )
+
+    PlaceOnBoard hex ->
+      ( updatePlaceOnBoard model hex
+      , Cmd.none
+      )
+      
+updateSupplySelection : Model -> Tile -> Model
+updateSupplySelection model target =
+  let
+    matches tm = Maybe.withDefault False (Maybe.map (\t -> t == target) tm)
+    available = List.any matches (List.map .tile model.supply)
+  in
+    { model | selection = if available then Supply target else NoSelection }
+
+updatePlaceOnBoard : Model -> Hex -> Model
+updatePlaceOnBoard model hex =
+  case model.selection of
+    NoSelection ->
+      model
+
+    Supply tile ->
+      let
+        boardUpdate th =
+          case th.tile of
+            Just _ ->
+              th
+            
+            Nothing ->
+              if th.hex == hex then
+                { th | tile = Just tile }
+              else
+                th
+        supplyUpdate th =
+          case th.tile of
+            Nothing ->
+              th
+
+            Just t ->
+              if t == tile then
+                { th | tile = Nothing }
+              else
+                th
+      in
+        { model
+        | board = List.map boardUpdate model.board
+        , supply = List.map supplyUpdate model.supply
+        , selection = NoSelection
+        }
 
 -- View
 
 view : Model -> Html Msg
-view {layout, board, supply} =
+view {layout, board, supply, selection} =
   div
     [ Html.Attributes.style "display" "flex"
     , Html.Attributes.style "align-items" "start"
@@ -92,7 +146,11 @@ view {layout, board, supply} =
         , viewBox (String.join " " (List.map String.fromFloat [x, y, w, h]))
         ]
       )
-      (List.map (makePolygon layout) board)
+      ( [ Svg.style
+          [ Svg.Attributes.type_ "text/css" ]
+          [ Svg.text ".hover-grey:hover { fill: #ccc }" ]
+        ] ++ (List.map (boardPolygon layout selection) board)
+      )
     , svg
       (let
         w = findWidth layout (List.map .hex supply)
@@ -106,8 +164,41 @@ view {layout, board, supply} =
         , Svg.Attributes.style "margin-left: 1em"
         ]
       )
-      (List.map (makePolygon layout) supply)
+      (List.map (supplyPolygon layout selection) supply)
     ]
+
+boardPolygon : Layout -> Selection -> TiledHex -> Svg Msg
+boardPolygon layout selection th =
+  let
+    msg = case (th.tile, selection) of
+      (Nothing, Supply _) ->
+        Just (PlaceOnBoard th.hex)
+      (_, _) ->
+        Nothing
+    hover = case (th.tile, selection) of
+      (Nothing, Supply _) -> CanHover
+      (_, _) -> NoHover
+  in
+    makePolygon layout Deselected hover msg th
+
+supplyPolygon : Layout -> Selection -> TiledHex -> Svg Msg
+supplyPolygon layout selection th =
+  let
+    msg = case selection of
+      Supply tile ->
+        Maybe.andThen (\t ->
+          if t == tile then
+            Nothing
+          else
+            Just (SelectFromSupply t))
+          th.tile
+      NoSelection ->
+        Maybe.map SelectFromSupply th.tile
+    selected = case (selection, th.tile) of
+      (Supply t, Just tile) -> if t == tile then Selected else Deselected
+      (_, _) -> Deselected
+  in
+    makePolygon layout selected NoHover msg th
 
 findWidth : Layout -> List Hex -> Float
 findWidth {size} hexes =
@@ -117,9 +208,8 @@ findWidth {size} hexes =
     maxQ = List.maximum qs
   in
     case (minQ, maxQ) of
-       (Nothing, _) -> 0
-       (_, Nothing) -> 0
        (Just min, Just max) -> size * 2 * (toFloat (max - min))
+       (_, _) -> 0
 
 findHeight : Layout -> List Hex -> Float
 findHeight {size} hexes =
@@ -129,19 +219,30 @@ findHeight {size} hexes =
     maxR = List.maximum rs
   in
     case (minR, maxR) of
-       (Nothing, _) -> 0
-       (_, Nothing) -> 0
-       (Just min, Just max) -> size * (sqrt 3) * (toFloat (max - min + 1))
+      (Just min, Just max) -> size * (sqrt 3) * (toFloat (max - min + 1))
+      (_, _) -> 0
 
-makePolygon : Layout -> TiledHex -> Svg Msg
-makePolygon layout {hex,tile} =
+type Hover
+  = CanHover
+  | NoHover
+
+makePolygon : Layout -> Selected -> Hover -> Maybe Msg -> TiledHex -> Svg Msg
+makePolygon layout selected hover msg {hex, tile} =
   g []
   ([ polygon
-    [ points (svgPoints (hexToScreenCorners layout hex))
-    , fill "white"
-    , stroke "black"
-    , Svg.Events.onClick (Alert hex)
-    ]
+    (
+      [ points (svgPoints (hexToScreenCorners layout hex))
+      , fill (case selected of
+        Selected -> "yellow"
+        Deselected -> "white")
+      , stroke "black"
+      ] ++ List.filterMap (\m -> m)
+      [ Maybe.map Svg.Events.onClick msg
+      , (case hover of
+          CanHover -> Just (class "hover-grey")
+          NoHover -> Nothing)
+      ]
+    )
     []
   ] ++ (List.filterMap (\m -> m)
     [ Maybe.map (\t -> t |> tileLeft |> tileTextLeft layout hex) tile
@@ -150,6 +251,10 @@ makePolygon layout {hex,tile} =
     ]
   )
   )
+
+type Selected
+  = Selected
+  | Deselected
 
 tileTextLeft : Layout -> Hex -> Int -> Svg msg
 tileTextLeft layout hex num =
