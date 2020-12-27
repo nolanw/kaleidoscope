@@ -11,7 +11,7 @@ Kaleidoscope is written in [Elm](https://elm-lang.org), so at a minimum you'll n
 Then, to build and run:
 
 ```sh
-make && open index.html
+make kaleiscope.js && open index.html
 ```
 
 ### Fancier setup
@@ -30,6 +30,22 @@ For automatic recompliation on browser refresh whenever relevant files change, i
 2. Have Tychus start its proxy and watching: `tychus "make" --wait --app-port=8000`
 3. `open http://localhost:4000`
 
+### Installation
+
+To build an optimized, single-file version:
+
+```sh
+make build/index.html
+```
+
+Then simply upload `build/index.html` to your hosting of choice. If that happens to be Nolan's Fastmail account, and if you create a netrc file at `install-netrc`, run:
+
+```sh
+make install
+```
+
+to build and upload via WebDAV.
+
 ### Roadmap
 
 - [x] Draw a hex grid resembling the Take It Easy board.
@@ -37,6 +53,7 @@ For automatic recompliation on browser refresh whenever relevant files change, i
 - [x] Click a tile to select it.
 - [x] Click a hex to place the selected tile.
 - [x] Save board state to local storage so it survives a reload.
+- [x] Upload it somewhere.
 - [ ] Improve aesthetics.
 - [ ] Save board state in the URL so it can be linked to others.
 - [ ] Select a tile by typing its numbers.
