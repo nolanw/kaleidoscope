@@ -257,7 +257,19 @@ view {layout, board, supply, selection} =
     [ Html.Attributes.style "display" "flex"
     , Html.Attributes.style "align-items" "start"
     ]
-    [ Html.node "style" [] [ Html.text ".hover-grey:hover { background: grey }" ]
+    [ Html.node "style" [] [ Html.text
+        """
+        .hover-grey:hover { background: grey }
+        
+        svg text {
+          cursor: default;
+          -webkit-user-select: none;
+          -moz-user-select: none;
+          -ms-user-select: none;
+          user-select: none;
+        }
+        """
+    ]
     , svg
       (let
         w = findWidth layout (List.map .hex board)
