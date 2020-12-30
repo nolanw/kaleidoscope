@@ -172,8 +172,29 @@ updateSupplySelection model target =
 updatePlaceOnBoard : Model -> Hex -> Model
 updatePlaceOnBoard model hex =
   case model.selection of
-    NoSelection -> model
-    Board _ -> model
+    NoSelection ->
+      model
+    
+    Board tile ->
+      let
+        boardUpdate bh =
+          case bh.tile of
+            Just t ->
+              if t == tile then
+                { bh | tile = Nothing }
+              else
+                bh
+            
+            Nothing ->
+              if bh.hex == hex then
+                { bh | tile = Just tile }
+              else
+                bh
+      in
+        { model
+        | board = List.map boardUpdate model.board
+        , selection = NoSelection
+        }
 
     Supply tile ->
       let
@@ -296,6 +317,8 @@ boardPolygon layout selection bh =
   let
     msg = case (bh.tile, selection) of
       (Nothing, Supply _) ->
+        Just (PlaceOnBoard bh.hex)
+      (Nothing, Board _) ->
         Just (PlaceOnBoard bh.hex)
       (Just bt, NoSelection) ->
         Just (SelectOnBoard bt)
