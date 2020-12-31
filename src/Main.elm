@@ -3,14 +3,14 @@ port module Main exposing (..)
 import Browser
 import Dict
 import HexGrid exposing (..)
-import Html exposing (Html, button, div)
+import Html exposing ( Html, button, div )
 import Html.Attributes
-import Html.Events exposing (onClick)
+import Html.Events
 import Json.Decode as D
 import Json.Encode as E
 import Svg exposing (..)
-import Svg.Attributes exposing (..)
-import Svg.Events exposing (onClick)
+import Svg.Attributes as A exposing (..)
+import Svg.Events exposing (..)
 
 -- Main
 
@@ -89,6 +89,14 @@ makeSupply boardTiles =
     combine hex tile = { hex = hex, tile = tileState tile }
   in
     List.map2 combine supplyGrid supplyTiles
+
+supplyGrid : List Hex
+supplyGrid =
+  List.concat
+    [ mapShapeVerticalLine 9 |> List.map (moveHorizontal -1)
+    , mapShapeVerticalLine 9
+    , mapShapeVerticalLine 9 |> List.map (moveHorizontal 1)
+    ]
 
 supplyTiles : List Tile
 supplyTiles =
@@ -259,7 +267,7 @@ view {layout, board, supply, selection} =
     ]
     [ Html.node "style" [] [ Html.text
         """
-        body {
+        svg {
           font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
         }
 
@@ -300,12 +308,7 @@ view {layout, board, supply, selection} =
         , viewBox (String.join " " (List.map String.fromFloat [x, y, w, h]))
         ]
       )
-      ( [ Svg.style
-          [ Svg.Attributes.type_ "text/css" ]
-          [ Svg.text ".hover-grey:hover { fill: #ccc }" ]
-        , glow
-        ] ++ (List.map (boardPolygon layout selection) board)
-      )
+      ( [glow] ++ (List.map (boardPolygon layout selection) board) )
     , button
       [ Html.Events.onClick ClearBoard ]
       [ Html.text "Clear Board" ]
@@ -319,14 +322,14 @@ view {layout, board, supply, selection} =
         [ width (String.fromFloat w)
         , height (String.fromFloat h)
         , viewBox (String.join " " (List.map String.fromFloat [x, y, w, h]))
-        , Svg.Attributes.style "margin-left: 1em"
+        , A.style "margin-left: 1em"
         ] ++ (List.filterMap (\m -> m)
         [ case selection of
           Board _ -> Just (Svg.Events.onClick RemoveFromBoard)
           Supply _ -> Nothing
           NoSelection -> Nothing
         , case selection of
-          Board _ -> Just (Svg.Attributes.class "hover-grey")
+          Board _ -> Just (class "hover-grey")
           Supply _ -> Nothing
           NoSelection -> Nothing
         ])
@@ -348,7 +351,7 @@ view {layout, board, supply, selection} =
 glow : Svg msg
 glow =
   -- https://stackoverflow.com/a/54115866
-  Svg.filter [ Svg.Attributes.id "glow" ]
+  Svg.filter [ id "glow" ]
     [ feFlood
       [ floodColor "#fff"
       , floodOpacity "0.7"
@@ -361,7 +364,7 @@ glow =
     , feGaussianBlur [ stdDeviation "1" ] []
     , feComponentTransfer [ result "glow1" ]
       [ feFuncA
-        [ Svg.Attributes.type_ "linear"
+        [ type_ "linear"
         , slope "10"
         , intercept "0"
         ] []
@@ -446,161 +449,91 @@ type Hover
 makePolygon : Layout -> Selected -> Hover -> Maybe Msg -> BoardHex -> Svg Msg
 makePolygon layout selected hover msg {hex, tile} =
   let
-    fill = Svg.Attributes.fill <| case selected of
+    fillColor = case selected of
       Selected -> "yellow"
       Deselected -> "white"
     hoverMaybe = case hover of
       CanHover -> Just (class "hover-grey")
       NoHover -> Nothing
     lines t =
-      [ t |> tileLeft |> lineLeft layout hex
-      , t |> tileMiddle |> lineMiddle layout hex
-      , t |> tileRight |> lineRight layout hex
+      [ t |> tileLeft |> lineEdgeToEdge layout hex Southwest Northeast
+      , t |> tileMiddle |> lineEdgeToEdge layout hex North South
+      , t |> tileRight |> lineEdgeToEdge layout hex Southeast Northwest
       ]
     titles t =
-      [ t |> tileLeft |> tileTextLeft layout hex
-      , t |> tileMiddle |> tileTextTop layout hex
-      , t |> tileRight |> tileTextRight layout hex
+      [ t |> tileLeft |> tileText layout hex LeftText
+      , t |> tileMiddle |> tileText layout hex TopText
+      , t |> tileRight |> tileText layout hex RightText
       ]
   in
-    [ polygon
-      (
-        [ hexToScreenCorners layout hex |> svgPoints |> points
-        , fill
-        , stroke "black"
-        ] ++ List.filterMap (\m -> m)
-        [ Maybe.map Svg.Events.onClick msg
-        , hoverMaybe
+    g []
+      (List.concat
+        [ [ polygon
+            (
+              [ points (hexCornersToScreen layout hex |> svgPoints)
+              , fill fillColor
+              , stroke "black"
+              ] ++ List.filterMap (\m -> m)
+              [ Maybe.map Svg.Events.onClick msg
+              , hoverMaybe
+              ]
+            )
+            []
+          ]
+        , Maybe.map lines tile |> Maybe.withDefault []
+        , Maybe.map titles tile |> Maybe.withDefault []
         ]
       )
-      []
-    ] ++ (Maybe.withDefault [] (Maybe.map lines tile))
-      ++ (Maybe.withDefault [] (Maybe.map titles tile))
-      |> g []
 
 type Selected
   = Selected
   | Deselected
 
-tileTextLeft : Layout -> Hex -> Int -> Svg msg
-tileTextLeft layout hex num =
+type TileTextPosition
+  = LeftText
+  | TopText
+  | RightText
+
+tileText : Layout -> Hex -> TileTextPosition -> Int -> Svg msg
+tileText layout hex textPosition num =
   let
-    corners = hexToScreenCorners layout hex
-    xs = corners |> List.map .x |> List.sort
-    left = xs |> List.take 2 |> average
-    ys = corners |> List.map .y |> List.sort
-    bottom = ys |> List.drop 3 |> List.take 2 |> average
+    anchor = case textPosition of
+      LeftText -> hexEdgeMidpointToScreen layout hex Southwest
+      TopText -> hexEdgeMidpointToScreen layout hex North
+      RightText -> hexEdgeMidpointToScreen layout hex Southeast
+    vertical = case textPosition of
+      LeftText -> "bottom"
+      TopText -> "hanging"
+      RightText -> "bottom"
+    horizontal = case textPosition of
+      LeftText -> "start"
+      TopText -> "middle"
+      RightText -> "end"
   in
     text_
-      [ x (String.fromFloat left)
-      , y (String.fromFloat bottom)
-      , Svg.Attributes.filter "url(#glow)"
+      [ x (anchor.x |> String.fromFloat)
+      , y (anchor.y |> String.fromFloat)
+      , A.filter "url(#glow)"
+      , alignmentBaseline vertical
+      , textAnchor horizontal
       ]
-      [ num |> String.fromInt |> Svg.text ]
+      [ num |> String.fromInt |> text ]
 
-tileTextTop : Layout -> Hex -> Int -> Svg msg
-tileTextTop layout hex num =
+lineEdgeToEdge : Layout -> Hex -> HexEdgeMidpoint -> HexEdgeMidpoint -> Int -> Svg msg
+lineEdgeToEdge layout hex startPoint endPoint num =
   let
-    corners = hexToScreenCorners layout hex
-    xs = corners |> List.map .x |> List.sort
-    left = xs |> List.drop 2 |> List.take 2 |> average
-    ys = corners |> List.map .y |> List.sort
-    bottom = ys |> List.drop 1 |> List.take 2 |> average
-  in
-    text_
-        [ x (String.fromFloat left)
-        , y (String.fromFloat bottom)
-        , Svg.Attributes.filter "url(#glow)"
-        , textAnchor "middle"
-        ]
-        [ num |> String.fromInt |> Svg.text
-        ]
-
-tileTextRight : Layout -> Hex -> Int -> Svg msg
-tileTextRight layout hex num =
-  let
-    corners = hexToScreenCorners layout hex
-    xs = corners |> List.map .x |> List.sort
-    left = xs |> List.drop 4 |> List.take 2 |> average
-    ys = corners |> List.map .y |> List.sort
-    bottom = ys |> List.drop 3 |> List.take 2 |> average
-  in
-    text_
-        [ x (String.fromFloat left)
-        , y (String.fromFloat bottom)
-        , Svg.Attributes.filter "url(#glow)"
-        , textAnchor "end"
-        ]
-        [ num |> String.fromInt |> Svg.text
-        ]
-
-lineLeft : Layout -> Hex -> Int -> Svg msg
-lineLeft layout hex num =
-  let
-    corners = hexToScreenCorners layout hex
-    xs = corners |> List.map .x |> List.sort
-    left = xs |> List.take 2 |> average
-    right = xs |> List.drop 4 |> List.take 2 |> average
-    ys = corners |> List.map .y |> List.sort
-    bottom = ys |> List.drop 3 |> List.take 2 |> average
-    top = ys |> List.drop 1 |> List.take 2 |> average
+    start = hexEdgeMidpointToScreen layout hex startPoint
+    end = hexEdgeMidpointToScreen layout hex endPoint
   in
     line
-      [ x1 <| String.fromFloat left
-      , y1 <| String.fromFloat bottom
-      , x2 <| String.fromFloat right
-      , y2 <| String.fromFloat top
-      , Svg.Attributes.class <| "line-" ++ (String.fromInt num)
-      , strokeWidth <| String.fromFloat (layout.size / 4)
+      [ x1 (start.x |> String.fromFloat)
+      , y1 (start.y |> String.fromFloat)
+      , x2 (end.x |> String.fromFloat)
+      , y2 (end.y |> String.fromFloat)
+      , class ("line-" ++ (String.fromInt num))
+      , strokeWidth (layout.size / 4 |> String.fromFloat)
       ]
       []
-
-lineMiddle : Layout -> Hex -> Int -> Svg msg
-lineMiddle layout hex num =
-  let
-    corners = hexToScreenCorners layout hex
-    xs = corners |> List.map .x |> List.sort
-    x = xs |> List.drop 2 |> List.take 2 |> average
-    ys = corners |> List.map .y |> List.sort
-    top = ys |> List.head |> Maybe.withDefault 0
-    bottom = ys |> List.drop 5 |> List.head |> Maybe.withDefault 0
-  in
-    line
-      [ x1 <| String.fromFloat x
-      , y1 <| String.fromFloat bottom
-      , x2 <| String.fromFloat x
-      , y2 <| String.fromFloat top
-      , Svg.Attributes.class <| "line-" ++ (String.fromInt num)
-      , strokeWidth <| String.fromFloat (layout.size / 4)
-      ]
-      []
-
-lineRight : Layout -> Hex -> Int -> Svg msg
-lineRight layout hex num =
-  let
-    corners = hexToScreenCorners layout hex
-    xs = corners |> List.map .x |> List.sort
-    left = xs |> List.take 2 |> average
-    right = xs |> List.drop 4 |> List.take 2 |> average
-    ys = corners |> List.map .y |> List.sort
-    top = ys |> List.drop 1 |> List.take 2 |> average
-    bottom = ys |> List.drop 3 |> List.take 2 |> average
-  in
-    line
-      [ x1 <| String.fromFloat left
-      , y1 <| String.fromFloat top
-      , x2 <| String.fromFloat right
-      , y2 <| String.fromFloat bottom
-      , Svg.Attributes.class <| "line-" ++ (String.fromInt num)
-      , strokeWidth <| String.fromFloat (layout.size / 4)
-      ]
-      []
-
-average : List Float -> Float
-average xs =
-  case xs of
-     [] -> 0
-     _ -> (List.sum xs) / (xs |> List.length |> toFloat)
 
 type alias Tile = ( TileLeft, TileMiddle, TileRight )
 type TileLeft = Two | Six | Seven
@@ -649,8 +582,16 @@ type SupplyTile
 
 svgPoints : List Point -> String
 svgPoints points =
-  String.join " " (List.map (\p -> String.fromFloat(p.x) ++ "," ++ String.fromFloat(p.y)) points)
+  List.map svgPoint points
+    |> String.join " "
 
+svgPoint : Point -> String
+svgPoint p =
+  let
+    x = p.x |> String.fromFloat
+    y = p.y |> String.fromFloat
+  in
+    x ++ "," ++ y
 
 -- Ports
 

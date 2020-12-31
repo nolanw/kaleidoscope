@@ -1,45 +1,96 @@
+-- https://www.redblobgames.com/grids/hexagons/ and https://www.redblobgames.com/grids/hexagons/implementation.html
+
 module HexGrid exposing (
   Hex,
-  hexToScreenCorners,
+  HexCorner(..),
+  hexCornerToScreen,
+  hexCornersToScreen,
+  HexEdgeMidpoint(..),
+  hexEdgeMidpointToScreen,
   Layout,
   mapShapeHex,
-  Point,
-  supplyGrid)
+  mapShapeVerticalLine,
+  moveHorizontal,
+  Point)
 
 type alias Point = { x: Float, y: Float }
 
 type alias Hex = { q: Int, r: Int }
-type alias FractionalHex = { q: Float, r: Float }
-type alias CubeHex = { q: Int, r: Int, s: Int }
-type alias FractionalCubeHex = { q: Float, r: Float, s: Float }
 
 type alias Layout = { size: Float }
 
-hexToScreenCenter : Layout -> Hex -> Point
-hexToScreenCenter {size} {q,r} =
+hexCenterToScreen : Layout -> Hex -> Point
+hexCenterToScreen {size} {q,r} =
   let
-    f0 = 3/2
-    f1 = 0
-    f2 = (sqrt 3)/2
-    f3 = sqrt 3
     q_f = toFloat q
     r_f = toFloat r
   in
-    { x = ((f0 * q_f) + (f1 * r_f)) * size
-    , y = ((f2 * q_f) + (f3 * r_f)) * size
+    { x = 3/2 * q_f * size
+    , y = (((sqrt 3)/2 * q_f) + ((sqrt 3) * r_f)) * size
     }
 
-hexToScreenCorners : Layout -> Hex -> List Point
-hexToScreenCorners layout hex =
+type HexCorner
+  = Right
+  | BottomRight
+  | BottomLeft
+  | Left
+  | TopLeft
+  | TopRight
+
+hexCornersToScreen : Layout -> Hex -> List Point
+hexCornersToScreen layout hex =
+  List.map (hexCornerToScreen layout hex)
+    [ Right
+    , BottomRight
+    , BottomLeft
+    , Left
+    , TopLeft
+    , TopRight
+    ]
+
+hexCornerToScreen : Layout -> Hex -> HexCorner -> Point
+hexCornerToScreen layout hex point =
   let
-    center = hexToScreenCenter layout hex
-    angleRad i = (degrees 60) * (toFloat i)
-    hexCorner i =
-      { x = center.x + (layout.size * cos(angleRad i))
-      , y = center.y + (layout.size * sin(angleRad i))
-      }
+    angle = degrees 60 * case point of
+      Right -> 0
+      BottomRight -> 1
+      BottomLeft -> 2
+      Left -> 3
+      TopLeft -> 4
+      TopRight -> 5
+    center = hexCenterToScreen layout hex
   in
-    List.map hexCorner (List.range 0 5)
+    { x = center.x + (layout.size * (cos angle))
+    , y = center.y + (layout.size * (sin angle))
+    }
+
+type HexEdgeMidpoint
+  = Southeast
+  | South
+  | Southwest
+  | Northwest
+  | North
+  | Northeast
+
+hexEdgeMidpointToScreen : Layout -> Hex -> HexEdgeMidpoint -> Point
+hexEdgeMidpointToScreen layout hex midpoint =
+  let
+    points = List.map (hexCornerToScreen layout hex)
+      <| case midpoint of
+        Southeast -> [ Right, BottomRight ]
+        South -> [ BottomRight, BottomLeft ]
+        Southwest -> [ BottomLeft, Left ]
+        Northwest -> [ Left, TopLeft ]
+        North -> [ TopLeft, TopRight ]
+        Northeast -> [ TopRight, Right ]
+  in
+    case points of
+      [ a, b ] ->
+        { x = (a.x + b.x) / 2
+        , y = (a.y + b.y) / 2
+        }
+      
+      _ -> { x = 0, y = 0 }
 
 screenToHex : Layout -> Point -> Hex
 screenToHex {size} {x,y} =
@@ -52,21 +103,19 @@ screenToHex {size} {x,y} =
       { x = x / size
       , y = y / size
       }
-    frac =
+  in
+    roundHex <|
       { q = (b0 * p.x) + (b1 * p.y)
       , r = (b2 * p.x) + (b3 * p.y)
       }
-  in
-    roundHex frac
-
-roundHex : FractionalHex -> Hex
+roundHex : { q: Float, r: Float } -> Hex
 roundHex frac =
   let
     cubeFrac = axialToCube frac
     rounded =
-      { q = toFloat (round cubeFrac.q)
-      , r = toFloat (round cubeFrac.r)
-      , s = toFloat (round cubeFrac.s)
+      { q = round cubeFrac.q |> toFloat
+      , r = round cubeFrac.r |> toFloat
+      , s = round cubeFrac.s |> toFloat
       }
     qDiff = abs (rounded.q - cubeFrac.q)
     rDiff = abs (rounded.r - cubeFrac.r)
@@ -94,10 +143,7 @@ axialToCube {q,r} =
   }
 
 cubeToAxial : { q: number, r: number, s: number } -> {q: number, r: number }
-cubeToAxial {q,r} =
-  { q = q
-  , r = r
-  }
+cubeToAxial {q,r} = { q = q, r = r }
 
 mapShapeHex : Int -> List Hex
 mapShapeHex radius =
@@ -110,26 +156,17 @@ mapShapeHex radius =
   in
     List.concat (List.map (\q -> List.map (\r -> hex q r) (rs q)) qs)
 
-supplyGrid : List Hex
-supplyGrid =
-  (moveAll (moveHorizontal -1) (mapShapeVerticalLine 9)) ++
-  (mapShapeVerticalLine 9) ++
-  (moveAll (moveHorizontal 1) (mapShapeVerticalLine 9))
-
 mapShapeVerticalLine : Int -> List Hex
 mapShapeVerticalLine height =
   let
-    fromZero = List.range 0 (height - 1)
     offset = (height + 1) // 2
+    hexify r = { q = 0, r = r - offset }
   in
-    List.map (\r -> { q = 0, r = r - offset }) fromZero
+    List.range 0 (height - 1)
+      |> List.map hexify
 
 moveHorizontal : Int -> Hex -> Hex
-moveHorizontal offset {q, r} =
+moveHorizontal offset {q,r} =
   { q = q + (2 * offset)
   , r = r - offset
   }
-
-moveAll : (Hex -> Hex) -> List Hex -> List Hex
-moveAll moveOne hexes =
-  List.map moveOne hexes
