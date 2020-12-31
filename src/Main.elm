@@ -6,21 +6,20 @@ import HexGrid exposing (..)
 import Html exposing ( Html, button, div )
 import Html.Attributes
 import Html.Events
-import Json.Decode as D
-import Json.Encode as E
 import Svg exposing (..)
 import Svg.Attributes as A exposing (..)
 import Svg.Events exposing (..)
+import Tile exposing (..)
 
 -- Main
 
-main : Program E.Value Model Msg
+main : Program Flags Model Msg
 main =
   Browser.element
     { init = init
     , view = view
     , update = updateWithStorage
-    , subscriptions = \_ -> Sub.none
+    , subscriptions = subscriptions
     }
 
 -- Model
@@ -37,46 +36,43 @@ type Selection
   | Board Tile
   | NoSelection
 
-init : E.Value -> ( Model, Cmd Msg )
-init flags =
-  let
-    layout = { size = 30 }
-    selection = NoSelection
-  in
-    (
-      case D.decodeValue decoder flags of
-        Ok boardTiles ->
-          { layout = layout
-          , selection = selection
-          , board = makeBoard boardTiles
-          , supply = makeSupply (List.filterMap .tile boardTiles)
-          }
-          
-        Err msg ->
-          { layout = layout
-          , selection = selection
-          , board = makeBoard []
-          , supply = makeSupply []
-          }
-    ,
-      Cmd.none
-    )
+type alias Flags = { boardEncoded: Maybe String }
 
-makeBoard : List BoardHex -> List BoardHex
-makeBoard boardTiles =
+init : Flags -> ( Model, Cmd Msg )
+init flags =
+  ( (modelInit flags)
+  , Cmd.none
+  )
+
+modelInit : Flags -> Model
+modelInit flags =
   let
-    toTuple bt = Maybe.map
-      (\t -> ((bt.hex.q, bt.hex.r), t))
-      bt.tile
-    lookup = boardTiles
-      |> List.filterMap toTuple
-      |> Dict.fromList
+    boardTiles = decodeBoardTiles flags.boardEncoded
   in
-    mapShapeHex 2
-      |> List.map (\h ->
-        { hex = h
-        , tile = Dict.get (h.q, h.r) lookup
-        })
+    { layout = { size = 30 }
+    , selection = NoSelection
+    , board = makeBoard <| if (List.isEmpty boardTiles) then (List.repeat 19 Nothing) else boardTiles
+    , supply = makeSupply <| List.filterMap identity <| boardTiles
+    }
+
+decodeBoardTiles : Maybe String -> List (Maybe Tile)
+decodeBoardTiles encoded =
+  let
+    decode s = s |> String.toList |> List.map tileDecode
+    decodedBoardTiles_ = Maybe.map decode encoded
+    decodedBoardTiles = Maybe.withDefault [] decodedBoardTiles_
+  in
+    if (List.length decodedBoardTiles) == 19 then
+      decodedBoardTiles
+    else
+      []
+
+makeBoard : List (Maybe Tile) -> List BoardHex
+makeBoard tiles =
+  let
+    boardify tile hex = { tile = tile, hex = hex }
+  in
+    List.map2 boardify tiles (mapShapeHex 2)
 
 makeSupply : List Tile -> List SupplyHex
 makeSupply boardTiles =
@@ -124,6 +120,7 @@ type Msg
   | RemoveFromBoard
   | Deselect
   | ClearBoard
+  | DeserializeBoard String
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
@@ -166,7 +163,12 @@ update msg model =
         }
       , Cmd.none
       )
-      
+    
+    DeserializeBoard encoded ->
+      ( modelInit { boardEncoded = Just encoded }
+      , Cmd.none
+      )
+
 updateSupplySelection : Model -> Tile -> Model
 updateSupplySelection model target =
   let
@@ -535,32 +537,6 @@ lineEdgeToEdge layout hex startPoint endPoint num =
       ]
       []
 
-type alias Tile = ( TileLeft, TileMiddle, TileRight )
-type TileLeft = Two | Six | Seven
-type TileMiddle = One | Five | Nine
-type TileRight = Three | Four | Eight
-
-tileLeft : Tile -> Int
-tileLeft tile =
-  case tile of
-    (Two, _, _) -> 2
-    (Six, _, _) -> 6
-    (Seven, _, _) -> 7
-
-tileMiddle : Tile -> Int
-tileMiddle tile =
-  case tile of
-    (_, One, _) -> 1
-    (_, Five, _) -> 5
-    (_, Nine, _) -> 9
-
-tileRight : Tile -> Int
-tileRight tile =
-  case tile of
-     (_, _, Three) -> 3
-     (_, _, Four) -> 4
-     (_, _, Eight) -> 8
-
 type alias BoardHex =
   { hex: Hex
   , tile: Maybe Tile
@@ -595,109 +571,25 @@ svgPoint p =
 
 -- Ports
 
-port setStorage : E.Value -> Cmd msg
+port setHash : String -> Cmd msg
+port hashChanged : (String -> msg) -> Sub msg
+
+-- Subscriptions
+
+subscriptions : Model -> Sub Msg
+subscriptions _ =
+  hashChanged DeserializeBoard
+
+-- Storage
 
 updateWithStorage : Msg -> Model -> ( Model, Cmd Msg )
 updateWithStorage msg oldModel =
   let
     ( newModel, cmds ) = update msg oldModel
+    boardTiles = List.map .tile newModel.board
+    encoded = List.map tileEncode boardTiles
+    hash = String.fromList encoded
   in
     ( newModel
-    , Cmd.batch [ setStorage (encode newModel), cmds ]
+    , Cmd.batch [ setHash hash, cmds ]
     )
-
-
--- JSON encode/decode
-
-encode : Model -> E.Value
-encode model =
-  E.object
-    [ ("board", E.list (\m -> m) (List.filterMap encodeBoardHex model.board) ) ]
-
-encodeBoardHex : BoardHex -> Maybe E.Value
-encodeBoardHex bh =
-  case bh.tile of
-    Nothing -> Nothing
-    Just t -> Just (E.object
-      [ ("hex", encodeHex bh.hex)
-      , ("tile", encodeTile t)
-      ])
-
-encodeHex : Hex -> E.Value
-encodeHex {q, r} =
-  [q, r]
-    |> List.map String.fromInt
-    |> String.join ","
-    |> E.string
-
-encodeTile : Tile -> E.Value
-encodeTile tile =
-  [ tileLeft, tileMiddle, tileRight ]
-    |> List.map (\f -> f tile)
-    |> List.map String.fromInt
-    |> String.join ""
-    |> E.string
-
-decoder : D.Decoder (List BoardHex)
-decoder =
-  D.field "board" (D.list decodeBoardHex)
-
-decodeBoardHex : D.Decoder BoardHex
-decodeBoardHex =
-  D.map2 BoardHex
-    (D.field "hex" D.string
-      |> D.andThen decodeHexString)
-    (D.field "tile" D.string
-      |> D.andThen decodeTileString)
-
-decodeHexString : String -> D.Decoder Hex
-decodeHexString hex =
-  let
-    components = String.split "," hex
-    ints = List.map String.toInt components
-  in case ints of
-    [Just q, Just r] -> D.succeed { q = q, r = r }
-    _ -> D.fail <|
-      "Trying to decode hex coordinate, but "
-      ++ hex ++ " is unrecognizable."
-
-decodeTileString : String -> D.Decoder (Maybe Tile)
-decodeTileString tile =
-  case String.toList tile of
-    [l, m, r] ->
-      case (tileLeftFromChar l, tileMiddleFromChar m, tileRightFromChar r) of
-        (Just left, Just middle, Just right) ->
-          D.succeed (Just ( left, middle, right ))
-        
-        _ ->
-          D.fail <|
-            "Trying to decode tile, but "
-            ++ tile ++ " is unrecognizable."
-    _ ->
-      D.fail <|
-        "Trying to decode tile, but "
-        ++ tile ++ " is not recognized."
-
-tileLeftFromChar : Char -> Maybe TileLeft
-tileLeftFromChar c =
-  case c of
-    '2' -> Just Two
-    '6' -> Just Six
-    '7' -> Just Seven
-    _ -> Nothing
-
-tileMiddleFromChar : Char -> Maybe TileMiddle
-tileMiddleFromChar c =
-  case c of
-    '1' -> Just One
-    '5' -> Just Five
-    '9' -> Just Nine
-    _ -> Nothing
-
-tileRightFromChar : Char -> Maybe TileRight
-tileRightFromChar c =
-  case c of
-    '3' -> Just Three
-    '4' -> Just Four
-    '8' -> Just Eight
-    _ -> Nothing
