@@ -120,7 +120,7 @@ mapShapeVerticalLine : Int -> List Hex
 mapShapeVerticalLine height =
   let
     fromZero = List.range 0 (height - 1)
-    offset = (height - 1) // 2
+    offset = (height + 1) // 2
   in
     List.map (\r -> { q = 0, r = r - offset }) fromZero
 
