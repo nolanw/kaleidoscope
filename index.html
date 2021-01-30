@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Kaleidoscope, a Take It Easy board</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<div id="app"></div>
+<script src="kaleidoscope.js"></script>
+<script>
+	function parsedHash() {
+		var parsedHash = /#board=([a-zAB]{19})/.exec(location.hash);
+		return parsedHash ? parsedHash[1] : null;
+	}
+	var flags = { boardEncoded: parsedHash() };
+	
+	var app = Elm.Main.init({
+		node: document.getElementById('app'),
+		flags: flags
+	});
+
+	var settingHash = false;
+	app.ports.setHash.subscribe(function(newHash) {
+		settingHash = true;
+		location.hash = '#board=' + newHash;
+	});
+	window.addEventListener('hashchange', function (e) {
+		if (!settingHash) {
+			app.ports.hashChanged.send(parsedHash());
+		}
+		settingHash = false;
+	}, false);
+</script>

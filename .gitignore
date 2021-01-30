@@ -7,5 +7,4 @@ repl-temp-*
 # kaleidoscope
 /build/
 /kaleidoscope.js
-/index.html
 /install-netrc
