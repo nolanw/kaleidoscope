@@ -97,19 +97,19 @@ supplyGrid =
 supplyTiles : List Tile
 supplyTiles =
   let
-    left = [Two, Six, Seven]
     top = [One, Five, Nine]
+    left = [Two, Six, Seven]
     right = [Three, Four, Eight]
   in
     List.concatMap
-      (\l -> List.concatMap
-        (\t -> List.map
+      (\t -> List.concatMap
+        (\l -> List.map
           (\r -> (l,t,r))
           right
         )
-        top
+        left
       )
-      left
+      top
 
 -- Update
 

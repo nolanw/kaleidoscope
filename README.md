@@ -55,7 +55,7 @@ to build and upload via WebDAV.
 - [x] Save board state to local storage so it survives a reload.
 - [x] Upload it somewhere.
 - [ ] Improve aesthetics.
-- [ ] Save board state in the URL so it can be linked to others.
+- [x] Save board state in the URL so it can be linked to others.
 - [ ] Select a tile by typing its numbers.
 - [ ] Place the selected tile by typing a numbered unoccupied hex.
 - [ ] Undo/redo.
