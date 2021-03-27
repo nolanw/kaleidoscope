@@ -67,3 +67,7 @@ to build and upload via WebDAV.
 * [elm-svg documentation.](https://package.elm-lang.org/packages/elm/svg/1.0.1/)
 * MDN's [SVG references and guides](https://developer.mozilla.org/en-US/docs/Web/SVG).
 * Red Blob Games's [Hexagonal Grids guide](https://www.redblobgames.com/grids/hexagons/) and [implementation notes](https://www.redblobgames.com/grids/hexagons/implementation.html).
+
+## License
+
+Kaleidoscope is in fhe public domain.
